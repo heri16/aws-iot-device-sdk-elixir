@@ -1,7 +1,7 @@
 defmodule Aws.Iot.ThingShadow do
 
   @moduledoc ~S"""
-  This module helps to make it easier to initialize a new `Aws.Iot.ThingShadow.Client` that is:
+  This module helps to make it easier to initialize a new `Aws.Iot.ThingShadow.Client` which:
   - Is supervised for automatic recovery
   - Has a GenEvent.manager that can survive the lifetime of the client process.
   - Has a GenEvent.handler that forwards event messages to other processes without blocking.

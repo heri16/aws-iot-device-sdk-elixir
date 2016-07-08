@@ -90,7 +90,6 @@ defmodule Aws.Iot.ThingShadow.Client do
     host: "xxxxxxxxx.iot.ap-southeast-1.amazonaws.com",
     port: 8883,
     client_id: "xxxxxxx",
-    thing_name: "xxxxxxx",
     ca_cert: "config/certs/root-CA.crt",
     client_cert: "config/certs/xxxxxxxxxx-certificate.pem.crt",
     private_key: "config/certs/xxxxxxxxxx-private.pem.key",

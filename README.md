@@ -14,6 +14,7 @@ https://github.com/aws/aws-iot-device-sdk-js/blob/master/thing/index.js
 * [License](#license)
 * [Support](#support)
 
+
 <a name="overview"></a>
 ## Overview
 This document provides instructions on how to install and configure the AWS 
@@ -37,6 +38,7 @@ will synchronize with the new state.  The 'ThingShadow' module supports multiple
 Thing Shadows per mqtt connection and allows pass-through of non-Thing-Shadow
 topics and mqtt events.
 
+
 <a name="install"></a>
 ## Installation
 
@@ -54,22 +56,23 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
           [applications: [:aws_iot]]
         end
 
+
 <a name="configuration"></a>
 ## Configuration
 
-The mix configuration in config/config.exs should look like this:
+The Mix configuration in config/config.exs should look like this:
 
 ```elixir
 config :aws_iot, Aws.Iot.ShadowThing.Client,
   host: "xxxxxxxxx.iot.<region>.amazonaws.com",
   port: 8883,
   client_id: "xxxxxxx",
-  thing_name: "xxxxxxx",
   ca_cert: "config/certs/root-CA.crt",
   client_cert: "config/certs/xxxxxxxxxx-certificate.pem.crt",
   private_key: "config/certs/xxxxxxxxxx-private.pem.key",
   mqttc_opts: []
 ```
+
 
 <a name="basic-usage"></a>
 ## Basic Usage
@@ -102,6 +105,7 @@ ThingShadow.Client.get(client, "aws-iot-thing-name")
 # See ThingShadow.Client events sent to self() via MyThing.PubSub
 Process.info(self)[:messages]
 ```
+
 
 <a name="otp-usage"></a>
 ## OTP Application Usage
@@ -214,6 +218,7 @@ Process.info(self)[:messages]
     - [AWS IoT Rules](http://docs.aws.amazon.com/iot/latest/developerguide/iot-rules.html)
     - [AWS IoT Rule Tutorials](http://docs.aws.amazon.com/iot/latest/developerguide/iot-rules-tutorial.html)
 
+
 <a name="troubleshooting"></a>
 ## Troubleshooting
 
@@ -227,10 +232,12 @@ will only allow one connection per client ID.
 If you are using a [Mix configuration file](#configuration), you'll
 need to explictly specify client IDs.
 
+
 <a name="license"></a>
 ## License
 
 This SDK is distributed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0), see LICENSE.txt and NOTICE.txt for more information.
+
 
 <a name="suport"></a>
 ## Support
