@@ -1,6 +1,6 @@
 # AWS IoT SDK for Elixir
 
-The aws-iot-device-sdk-elixir package allows developers to write [Elixir](http://elixir-lang.org) applications which access the AWS IoT Platform via [MQTT or MQTT over the Secure WebSocket Protocol](http://docs.aws.amazon.com/iot/latest/developerguide/protocols.html).  It can be used in Elixir standard environments as well as in [Nerves](http://nerves-project.org) embedded applications.
+The aws-iot-device-sdk-elixir package allows developers to write [Elixir](http://elixir-lang.org) applications which access the [AWS IoT Platform](https://aws.amazon.com/iot/) via [MQTT](http://docs.aws.amazon.com/iot/latest/developerguide/protocols.html).  It can be used in standard [Elixir](http://elixir-lang.org) environments as well as in [Nerves](http://nerves-project.org) embedded applications.
 
 Closely follows the logic from the official nodejs library, with minor deviations to adapt to Elixir Coding Conventions:
 https://github.com/aws/aws-iot-device-sdk-js/blob/master/thing/index.js
