@@ -27,7 +27,7 @@ defmodule Aws.Iot.ThingShadow.Supervisor do
   Callback invoked to start the supervisor and during hot code upgrades.
   """
   def init([client_name, opts]) when is_list(opts) do
-  	mqttc_options_or_app_name = Keyword.get(opts, :mqtt, nil) || Keyword.get(opts, :app_config, :aws_iot)
+    mqttc_options_or_app_name = Keyword.get(opts, :mqtt, nil) || Keyword.get(opts, :app_config, :aws_iot)
 
     event_manager_name = name_concat(client_name, "EventManager")
 

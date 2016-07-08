@@ -7,7 +7,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
 
   ## Usage
     iex> {:ok, event_manager} = GenEvent.start_link([])
-  	iex> GenEvent.add_mon_handler(event_manager, EventHandler, [broadcast: {MyApp.PubSub, "thing_shadow_event"}])
+    iex> GenEvent.add_mon_handler(event_manager, EventHandler, [broadcast: {MyApp.PubSub, "thing_shadow_event"}])
 
   """
 
@@ -25,7 +25,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   """
   @spec hibernate(GenEvent.handler, GenEvent.manager) :: :ok
   def hibernate(handler \\ __MODULE__, manager) do
-  	GenEvent.call(manager, handler, :hibernate)
+    GenEvent.call(manager, handler, :hibernate)
   end
 
 
@@ -56,7 +56,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   """
   @spec add_cast(GenEvent.handler, GenEvent.manager, GenServer.server) :: :ok
   def add_cast(handler \\ __MODULE__, manager, server_process) do
-  	GenEvent.call(manager, handler, {:add_cast, server_process})
+    GenEvent.call(manager, handler, {:add_cast, server_process})
   end
 
   @doc """
@@ -66,7 +66,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   """
   @spec remove_cast(GenEvent.handler, GenEvent.manager, GenServer.server) :: :ok
   def remove_cast(handler \\ __MODULE__, manager, server_process) do
-  	GenEvent.call(manager, handler, {:remove_cast, server_process})
+    GenEvent.call(manager, handler, {:remove_cast, server_process})
   end
 
   @doc """
@@ -77,7 +77,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   """
   @spec add_call(GenEvent.handler, GenEvent.manager, GenServer.server) :: :ok
   def add_call(handler \\ __MODULE__, manager, server_process) do
-  	GenEvent.call(manager, handler, {:add_call, server_process})
+    GenEvent.call(manager, handler, {:add_call, server_process})
   end
 
   @doc """
@@ -88,7 +88,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   """
   @spec remove_call(GenEvent.handler, GenEvent.manager, GenServer.server) :: :ok
   def remove_call(handler \\ __MODULE__, manager, server_process) do
-  	GenEvent.call(manager, handler, {:remove_call, server_process})
+    GenEvent.call(manager, handler, {:remove_call, server_process})
   end
 
 
@@ -101,7 +101,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   Use the form of [call: server_process1] only when backpressure is desired to prevent too many pending async messages in process mailbox.
   """
   def init(args) when is_list(args) do
-  	init(args, %{broadcast_to: [], cast_to: [], call_to: []})
+    init(args, %{broadcast_to: [], cast_to: [], call_to: []})
   end
   def init([{:broadcast, pubsub_topic = {_pubsub_server, _topic}} | args], state = %{broadcast_to: broadcast_to}) do
     if Code.ensure_loaded?(PubSub) do
@@ -111,18 +111,18 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
     end
   end
   def init([{:cast, server_process} | args], state = %{cast_to: cast_to}) do
-  	init(args, %{state | cast_to: [server_process | cast_to] })
+    init(args, %{state | cast_to: [server_process | cast_to] })
   end
   def init([{:call, server_process} | args], state = %{call_to: call_to}) do
-  	init(args, %{state | call_to: [server_process | call_to] })
+    init(args, %{state | call_to: [server_process | call_to] })
   end
   def init([ _unknown | args], state) do
-  	# Skip unknown arg
-  	init(args, state)
+    # Skip unknown arg
+    init(args, state)
   end
   def init([], state) do
-  	# End of args
-  	{:ok, state}
+    # End of args
+    {:ok, state}
   end
 
   def handle_event(event, state = %{broadcast_to: broadcast_to, cast_to: cast_to, call_to: call_to}) do
@@ -131,7 +131,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
     |> Enum.reverse
     |> Enum.each(fn {server_process, topic} -> PubSub.broadcast(server_process, topic, event) end)
 
-  	# Forward event to all GenServers in cast_to in a concurrent manner
+    # Forward event to all GenServers in cast_to in a concurrent manner
     cast_to 
     |> Enum.reverse 
     |> Enum.each(fn server_process -> GenServer.cast(server_process, event) end)
@@ -150,7 +150,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   end
 
   def handle_call(:hibernate, state) do
-  	{:ok, :ok, state, :hibernate}
+    {:ok, :ok, state, :hibernate}
   end
 
   def handle_call({:add_broadcast, pubsub_topic = {_pubsub_server, _topic}}, state = %{broadcast_to: broadcast_to}) do
@@ -172,29 +172,29 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   end
 
   def handle_call({:add_cast, server_process}, state = %{cast_to: cast_to}) do
-  	if Enum.any?(cast_to, &(&1 == server_process) ) do
+    if Enum.any?(cast_to, &(&1 == server_process) ) do
       {:ok, :ok, state}
-  	else
-  	  {:ok, :ok, %{state | cast_to: [server_process | cast_to] } }
-  	end
+    else
+      {:ok, :ok, %{state | cast_to: [server_process | cast_to] } }
+    end
   end
 
   def handle_call({:remove_cast, server_process}, state = %{cast_to: cast_to}) do
-  	cast_to = cast_to |> Enum.filter(&(&1 != server_process))
-  	{:ok, :ok, %{state | cast_to: cast_to } }
+    cast_to = cast_to |> Enum.filter(&(&1 != server_process))
+    {:ok, :ok, %{state | cast_to: cast_to } }
   end
 
   def handle_call({:add_call, server_process}, state = %{call_to: call_to}) do
-  	if Enum.any?(call_to, &(&1 == server_process) ) do
+    if Enum.any?(call_to, &(&1 == server_process) ) do
       {:ok, :ok, state}
-  	else
-  	  {:ok, :ok, %{state | call_to: [server_process | call_to] } }
-  	end
+    else
+      {:ok, :ok, %{state | call_to: [server_process | call_to] } }
+    end
   end
 
   def handle_call({:remove_call, server_process}, state = %{call_to: call_to}) do
-  	call_to = call_to |> Enum.filter(&(&1 != server_process))
-  	{:ok, :ok, %{state | call_to: call_to } }
+    call_to = call_to |> Enum.filter(&(&1 != server_process))
+    {:ok, :ok, %{state | call_to: call_to } }
   end
 
 end
