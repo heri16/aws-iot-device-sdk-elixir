@@ -82,19 +82,9 @@ You can try out the below in IEx:
 ```elixir
 alias Aws.Iot.ThingShadow
 
-# Start an event bus named MyThings.PubSub using Phoenix.PubSub
-import Supervisor.Spec, warn: false
-children = [ 
-  supervisor(Phoenix.PubSub.PG2, [MyThings.PubSub, []])
-]
-Supervisor.start_link(children, strategy: :one_for_one)
-
-# Subscribe self() to the events topic of MyThings.PubSub
-Phoenix.PubSub.subscribe(MyThings.PubSub, "thing_shadow_event")
-
 # Initializes a new ThingShadow.Client process
-# Events from this client will be broadcasted to events topic of MyThings.PubSub
-{:ok, client} = ThingShadow.init_client([broadcast: {MyThings.PubSub, "thing_shadow_event"}])
+# Events from this client will be forwarded to self()
+{:ok, client} = ThingShadow.init_client([cast: self()])
 
 # Register interest in a thing (required)
 ThingShadow.Client.register(client, "aws-iot-thing-name")
@@ -212,11 +202,14 @@ Process.info(self)[:messages]
 
   4. Use `ThingShadow.Client.publish/3` to trigger AWS IoT Rules.
 
-    Do not use the publish function to communicate with an IoT device, as MQTT messages are lost when the device is disconnected from the broker.
+    Try creating a simple rule to forward messages to AWS SNS, which sends alert notifications via Email or Cellular SMS Messages.
 
     Read more:
     - [AWS IoT Rules](http://docs.aws.amazon.com/iot/latest/developerguide/iot-rules.html)
     - [AWS IoT Rule Tutorials](http://docs.aws.amazon.com/iot/latest/developerguide/iot-rules-tutorial.html)
+    - [AWS SNS Sending SMS](http://docs.aws.amazon.com/sns/latest/dg/SMSMessages.html)
+
+    **Important**: Do not use the publish function to communicate with any IoT device, as MQTT messages are lost when the device is disconnected from the broker.
 
 
 <a name="troubleshooting"></a>
