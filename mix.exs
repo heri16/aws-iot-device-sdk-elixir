@@ -37,7 +37,7 @@ defmodule AwsIot.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:emqttc, github: "emqtt/emqttc", branch: "master"},
+      {:emqttc, github: "heri16/emqttc", branch: "master"},
       {:phoenix_pubsub, "~> 1.0", optional: true}
     ]
   end

@@ -2,7 +2,7 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
 
   @moduledoc ~S"""
   GenEvent executes handlers sequentially in a single loop of the GenEvent.manager process.
-  To avoid this bottleneck, we ensure that handlers do nothing other than forwarding events.
+  To avoid this bottleneck, we ensure that handlers do nothing other than forwarding events (i.e. delegation).
   Also, please use `GenEvent.add_mon_handler/3` if available, so that the calling process that adds the handler would receive the message `{:gen_event_EXIT, handler, reason}` if the event handler is later deleted.
 
   ## Usage
@@ -97,11 +97,11 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
   @doc """
   Initializes the state of the handler during `GenEvent.add_handler/3` (and `GenEvent.add_mon_handler/3`) 
 
-  - `args` should be in the form of [broadcast: pubsub_process1, cast: genserver_process1, cast: genserver_process2].
+  - `args` should be in the form of [broadcast: pubsub_bus1, send: otp_process1, cast: genserver_process1, cast: genserver_process2].
   Use the form of [call: server_process1] only when backpressure is desired to prevent too many pending async messages in process mailbox.
   """
   def init(args) when is_list(args) do
-    init(args, %{broadcast_to: [], cast_to: [], call_to: []})
+    init(args, %{broadcast_to: [], send_to: [], cast_to: [], call_to: []})
   end
   def init([{:broadcast, pubsub_topic = {_pubsub_server, _topic}} | args], state = %{broadcast_to: broadcast_to}) do
     if Code.ensure_loaded?(PubSub) do
@@ -109,6 +109,9 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
     else
       {:error, "Specified broadcast, but Phoenix.PubSub dependency is not loaded"}
     end
+  end
+  def init([{:send, generic_process} | args], state = %{send_to: send_to}) do
+    init(args, %{state | send_to: [generic_process | send_to] })
   end
   def init([{:cast, server_process} | args], state = %{cast_to: cast_to}) do
     init(args, %{state | cast_to: [server_process | cast_to] })
@@ -125,11 +128,16 @@ defmodule Aws.Iot.ThingShadow.EventHandler do
     {:ok, state}
   end
 
-  def handle_event(event, state = %{broadcast_to: broadcast_to, cast_to: cast_to, call_to: call_to}) do
+  def handle_event(event, state = %{broadcast_to: broadcast_to, send_to: send_to, cast_to: cast_to, call_to: call_to}) do
     # Forward event to all PubSub topics in broadcast_to in a concurrent manner
     broadcast_to
     |> Enum.reverse
     |> Enum.each(fn {server_process, topic} -> PubSub.broadcast(server_process, topic, event) end)
+
+    # Forward event to all generic processes in send_to in a concurrent manner
+    cast_to 
+    |> Enum.reverse 
+    |> Enum.each(fn generic_process -> Process.send(generic_process, event, [:nosuspend]) end)
 
     # Forward event to all GenServers in cast_to in a concurrent manner
     cast_to 

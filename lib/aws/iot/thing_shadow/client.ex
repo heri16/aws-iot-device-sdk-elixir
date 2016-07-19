@@ -70,6 +70,8 @@ defmodule Aws.Iot.ThingShadow.Client do
 
   use GenServer
 
+  require Logger
+
   ## Client API ##
 
   @doc """
@@ -189,16 +191,16 @@ defmodule Aws.Iot.ThingShadow.Client do
   end
 
   @doc """
-  Update the Thing Shadow named `thing_name` with the state specified in the object `shadow_state_object`. `thing_name` must have been previously registered using `register/3`. The thingShadow process will subscribe to all applicable topics and publish `shadow_state_object` on the update sub-topic.
+  Update the Thing Shadow named `thing_name` with the state specified in the object `shadow_state_doc`. `thing_name` must have been previously registered using `register/3`. The thingShadow process will subscribe to all applicable topics and publish `shadow_state_doc` on the update sub-topic.
 
   If the operation is in progress, this function returns `{:ok, client_token}`.
-  `client_token` is a unique value associated with the update operation. When a 'status' or 'timeout' event is emitted, the client_token will be supplied as one of the parameters, allowing the application to keep track of the status of each operation. The caller may create their own client_token value; if `shadow_state_object` contains a client_token property, that will be used rather than the internally generated value. Note that it should be of atomic type (i.e. numeric or string). This function returns `nil` if an operation is already in progress.
+  `client_token` is a unique value associated with the update operation. When a 'status' or 'timeout' event is emitted, the client_token will be supplied as one of the parameters, allowing the application to keep track of the status of each operation. The caller may create their own client_token value; if `shadow_state_doc` contains a client_token property, that will be used rather than the internally generated value. Note that it should be of atomic type (i.e. numeric or string). This function returns `nil` if an operation is already in progress.
 
   `operation_timeout` (milliseconds). If no accepted or rejected response to a thing operation is received within this time, subscriptions to the accepted and rejected sub-topics for a thing are cancelled.
   """
   @spec update(GenServer.server, String.t, %{atom => any}) :: {:ok, binary} | {:error, any}
-  def update(pid, thing_name, shadow_state_object, operation_timeout \\ 10000) when is_binary(thing_name) and is_map(shadow_state_object) and operation_timeout >= 0 do
-    #shadow_state_object = %{
+  def update(pid, thing_name, shadow_state_doc, operation_timeout \\ 10000) when is_binary(thing_name) and is_map(shadow_state_doc) and operation_timeout >= 0 do
+    #shadow_state_doc = %{
     #  state: %{
     #    reported: %{
     #      "awsSqsSyncLastMessageId" => "3c52e73a-284c-4dc1-80d6-2d01d64f5b35"
@@ -206,7 +208,7 @@ defmodule Aws.Iot.ThingShadow.Client do
     #  }
     #}
 
-    GenServer.call(pid, {:thing_operation, :update, thing_name, shadow_state_object, operation_timeout})
+    GenServer.call(pid, {:thing_operation, :update, thing_name, shadow_state_doc, operation_timeout})
   end
   
   @doc """
@@ -219,8 +221,8 @@ defmodule Aws.Iot.ThingShadow.Client do
   """
   @spec get(GenServer.server, String.t, String.t) :: {:ok, binary} | {:error, any}
   def get(pid, thing_name, client_token \\ "", operation_timeout \\ 10000) when is_binary(thing_name) and is_binary(client_token) and operation_timeout >= 0 do
-    shadow_state_object = if (client_token == ""), do: %{}, else: %{clientToken: client_token}
-    GenServer.call(pid, {:thing_operation, :get, thing_name, shadow_state_object, operation_timeout})
+    shadow_state_doc = if (client_token == ""), do: %{}, else: %{clientToken: client_token}
+    GenServer.call(pid, {:thing_operation, :get, thing_name, shadow_state_doc, operation_timeout})
   end
 
   @doc """
@@ -233,8 +235,8 @@ defmodule Aws.Iot.ThingShadow.Client do
   """
   @spec delete(GenServer.server, String.t, String.t) :: {:ok, binary} | {:error, any}
   def delete(pid, thing_name, client_token \\ "", operation_timeout \\ 10000) when is_binary(thing_name) and is_binary(client_token) and operation_timeout >= 0 do
-    shadow_state_object = if (client_token == ""), do: %{}, else: %{clientToken: client_token}
-    GenServer.call(pid, {:thing_operation, :get, thing_name, shadow_state_object, operation_timeout})
+    shadow_state_doc = if (client_token == ""), do: %{}, else: %{clientToken: client_token}
+    GenServer.call(pid, {:thing_operation, :get, thing_name, shadow_state_doc, operation_timeout})
   end
 
   @doc """
@@ -302,7 +304,18 @@ defmodule Aws.Iot.ThingShadow.Client do
 
     try do
       {:ok, client} = :emqttc.start_link(mqttc_options)
-      {:ok, %{mqttc: client, event_manager: event_manager, thing_shadows: %{}, client_id: mqttc_options[:client_id], seq: 0 } }
+
+      initial_state = %{
+        mqttc: client, 
+        mqttc_state: :disconnected, 
+        pending_calls: [],
+        event_manager: event_manager, 
+        thing_shadows: %{}, 
+        client_id: mqttc_options[:client_id], 
+        seq: 0 
+      }
+
+      {:ok, initial_state }
 
     rescue
       e -> {:stop, e}
@@ -321,7 +334,7 @@ defmodule Aws.Iot.ThingShadow.Client do
   * discard_stale: set to false to allow receiving messages with old version numbers (default true)
   * enable_versioning: set to true to send version numbers with shadow updates (default true)
   """
-  def handle_call({:thing_register, thing_name, opts}, _from, state = %{mqttc: client, thing_shadows: thing_shadows}) when is_binary(thing_name) and is_list(opts) do
+  def handle_call({:thing_register, thing_name, opts}, _from, state = %{mqttc_state: :connected, mqttc: client, thing_shadows: thing_shadows}) when is_binary(thing_name) and is_list(opts) do
     # DONE: Implement version keeping and options[:discard_stale]
     # DONE: Delay subscribe to during update/delete operation only, if options[:persistent_subscribe]
     # DONE: Send version numbers with shadow updates if options[:enable_versioning]
@@ -359,7 +372,7 @@ defmodule Aws.Iot.ThingShadow.Client do
             handle_subscriptions(client, {:subscribe, thing_name, [:update, :get, :delete], [:accepted, :rejected]}, current_thing)
           false ->
             # Do nothing
-            {:ok, :noop}
+            :ok
         end
     end
 
@@ -368,38 +381,35 @@ defmodule Aws.Iot.ThingShadow.Client do
         # Update to new state on ok
         {:reply, :ok, new_state}
 
-      {:ok, _} ->
-        # Update to new state on ok
-        {:reply, :ok, new_state}
-
-      :error ->
-        # Keep previous state on error
-        {:reply, {:error, :unknown}, state}
-
       {:error, reason} ->
         # Keep previous state on error
         {:reply, {:error, reason}, state}
     end
   end
+  def handle_call(request = {:thing_register, thing_name, opts}, from, state = %{mqttc_state: :disconnected, pending_calls: pending_calls}) when is_binary(thing_name) and is_list(opts) do
+    # Block the caller if we know we are offline (to prevent mailbox overflow)
+    {:noreply, %{state | pending_calls: [ {request, from} | pending_calls]}}
+  end
 
   @doc """
   Responsible for handling thingshadow update/get/delete operation-requests for a registered thing
   """
-  def handle_call({:thing_operation, operation, thing_name, shadow_state_object, operation_timeout}, _from, state = %{mqttc: client, thing_shadows: thing_shadows, client_id: client_id, seq: seq}) when is_atom(operation) and is_binary(thing_name) do
+  def handle_call({:thing_operation, operation, thing_name, shadow_state_doc, operation_timeout}, _from, state = %{mqttc_state: :connected, mqttc: client, thing_shadows: thing_shadows, client_id: client_id, seq: seq}) when is_atom(operation) and is_binary(thing_name) do
     case thing_shadows do
       %{^thing_name => current_thing} ->
-        # Generate client_token if missing from shadow_state_object
-        client_token = shadow_state_object[:clientToken] || shadow_state_object["clientToken"] || "#{client_id}-#{seq}"
-        shadow_state_object = Map.put_new(shadow_state_object, :clientToken, client_token)
+        # Generate client_token if missing from shadow_state_doc
+        client_token = shadow_state_doc[:clientToken] || shadow_state_doc["clientToken"] || "#{client_id}-#{seq}"
+        shadow_state_doc = Map.put_new(shadow_state_doc, :clientToken, client_token)
 
         # Subscribe to response topics (if persistent_subscribe is false)
         case handle_persistent_subscriptions(client, {:subscribe, thing_name, [operation], [:accepted, :rejected]}, current_thing) do
-          {:ok, _} ->
+          :ok ->
             # After a period of time, we are no longer interested in the accepted/rejected response, so we unsubscribe (if persistent_subscribe is false)
             operation_timer = Process.send_after(self(), {:thing_operation_timeout, thing_name, operation, client_token}, operation_timeout)
+            Logger.debug "[#{thing_name}] Started #{operation} operation timeout timer for client token: #{client_token}"
 
             publish_topic = build_thing_shadow_topic(thing_name, operation)
-            case publish_shadow_state_to_topic(client, publish_topic, shadow_state_object, current_thing) do
+            case publish_shadow_doc_to_topic(client, publish_topic, shadow_state_doc, current_thing) do
               :ok ->
                 # Add client_token to operation_timers in current_thing
                 current_thing = current_thing |> Map.update(:operation_timers, %{client_token => operation_timer}, fn current_operation_timers ->
@@ -422,6 +432,10 @@ defmodule Aws.Iot.ThingShadow.Client do
       _no_match ->
         {:reply, {:error, "Attempting to #{operation} unknown thing: #{thing_name}. Please register beforehand."}, state }
     end
+  end
+  def handle_call(request = {:thing_operation, operation, thing_name, _shadow_state_doc, _operation_timeout}, from, state = %{mqttc_state: :disconnected, pending_calls: pending_calls}) when is_atom(operation) and is_binary(thing_name) do
+    # Block the caller if we know we are offline (to prevent mailbox overflow)
+    {:noreply, %{state | pending_calls: [ {request, from} | pending_calls]}}
   end
 
   @doc """
@@ -456,7 +470,7 @@ defmodule Aws.Iot.ThingShadow.Client do
     {:reply, unsubscribe_result, state}
   end
   def handle_call({:thing_unsubscribe, topic}, _from, state = %{mqttc: client}) when is_binary(topic) do
-    unsubscribe_result = :emqttc.subscribe(client, topic)
+    unsubscribe_result = :emqttc.unsubscribe(client, topic)
     {:reply, unsubscribe_result, state}
   end
 
@@ -471,8 +485,26 @@ defmodule Aws.Iot.ThingShadow.Client do
   @doc """
   Responsible for receiving MQTT broker connected event from mqttc client
   """
-  def handle_info({:mqttc, client, :connected}, state = %{mqttc: client, event_manager: handlers}) do
-    IO.puts "MQTT client #{inspect(client)} is connected"
+  def handle_info({:mqttc, client, :connected}, state = %{mqttc: client, pending_calls: pending_calls, event_manager: handlers}) do
+    Logger.debug "MQTT client #{inspect(client)} is connected"
+
+    state = %{state | mqttc_state: :connected }
+    state = pending_calls
+      |> Enum.reverse
+      |> Enum.reduce(state, fn ({request, from}, last_state) ->
+          case handle_call(request, from, last_state) do
+            {:reply, reply = :ok, next_state} ->
+              :ok =  GenServer.reply(from, reply)
+              next_state |> Map.update(:pending_calls, [], fn pending_calls -> tl(pending_calls) end)
+
+            {:reply, {:error, reason}, next_state} ->
+              Logger.warn "Error when processing pending_call #{request}: #{reason}"
+              next_state
+
+            _other ->
+              last_state
+          end
+        end)
 
     GenEvent.ack_notify(handlers, {:connect, self})
     {:noreply, state}
@@ -482,9 +514,10 @@ defmodule Aws.Iot.ThingShadow.Client do
   Responsible for receiving MQTT broker disconnected event from mqttc client
   """
   def handle_info({:mqttc, client, :disconnected}, state = %{mqttc: client, event_manager: handlers}) do
-    IO.puts "MQTT client #{inspect(client)} is disconnected"
+    Logger.debug "MQTT client #{inspect(client)} is disconnected"
 
-    GenEvent.ack_notify(handlers, {:disconnect, self})
+    state = %{state | mqttc_state: :disconnected }
+    GenEvent.ack_notify(handlers, {:offline, self})
     {:noreply, state}
   end
 
@@ -523,7 +556,7 @@ defmodule Aws.Iot.ThingShadow.Client do
   Responsible for receiving MQTT messages from mqttc client
   """
   def handle_info({:publish, topic, payload}, state) do
-    IO.puts "Message from #{topic}: #{payload}"
+    #Logger.debug "Message from #{topic}: #{payload}"
 
     # Handle topics by pattern-matching
     topic |> String.split("/", parts: 6) |> handle_topic_message(payload, state)
@@ -536,18 +569,24 @@ defmodule Aws.Iot.ThingShadow.Client do
     # Handle delta response message
     case thing_shadows do
       %{^thing_name => current_thing} ->
+        Logger.debug "[#{thing_name}] Parsing JSON of delta message payload."
+
         case Poison.Parser.parse(payload) do
-          {:ok, shadow_state_object} ->
-            _client_token = shadow_state_object["clientToken"] || shadow_state_object[:clientToken]
-            version = shadow_state_object["version"] || shadow_state_object[:version]
+          {:ok, shadow_state_doc} ->
+            client_token = shadow_state_doc["clientToken"] || shadow_state_doc[:clientToken]
+            version = shadow_state_doc["version"] || shadow_state_doc[:version]
+
+            Logger.debug "[#{thing_name}] Decoded shadow delta with version: #{version}"
 
             case update_version_in_thing(current_thing, version, :update) do
               nil ->
                 # Do nothing as message is to be discarded
+                Logger.info "[#{thing_name}] Discarding outdated shadow delta with client token: #{client_token}"
                 {:noreply, state}
               current_thing ->
+                Logger.info "[#{thing_name}] Receiving new shadow delta with client token: #{client_token}"
                 # Notify delta event handlers
-                GenEvent.ack_notify(handlers, {:delta, thing_name, shadow_state_object})
+                GenEvent.ack_notify(handlers, {:delta, thing_name, shadow_state_doc})
                 # Update state of version in current_thing
                 thing_shadows = %{thing_shadows | thing_name => current_thing}
                 {:noreply, %{state | thing_shadows: thing_shadows}}
@@ -577,39 +616,47 @@ defmodule Aws.Iot.ThingShadow.Client do
           "rejected" -> :rejected
         end
 
+        Logger.debug "[#{thing_name}] Parsing JSON of #{status}-#{operation} message payload."
+
         case Poison.Parser.parse(payload) do
-          {:ok, shadow_state_object} ->
-            client_token = shadow_state_object["clientToken"] || shadow_state_object[:clientToken]
-            version = shadow_state_object["version"] || shadow_state_object[:version]
+          {:ok, shadow_state_doc} ->
+            client_token = shadow_state_doc["clientToken"] || shadow_state_doc[:clientToken]
+            version = shadow_state_doc["version"] || shadow_state_doc[:version]
+
+            Logger.debug "[#{thing_name}] Decoded #{status}-#{operation} shadow document with version: #{version}"
 
             case update_version_in_thing(current_thing, version, operation) do
               nil ->
                 # Do nothing as message is to be discarded
+                Logger.info "[#{thing_name}] Discarding outdated shadow document with client token: #{client_token}"
                 {:noreply, state}
 
-              current_thing = %{operation_timers: _current_operation_timers = %{^client_token => _} } ->
-                # Cancel operation_timeout timer, and Remove client_token from operation_timers in current_thing
-                current_thing = current_thing |> Map.update(:operation_timers, %{}, fn current_operation_timers ->
-                  {operation_timer, new_operation_timers} = current_operation_timers |> Map.pop(client_token)
-                  if (operation_timer != nil), do: Process.cancel_timer(operation_timer)
-                  new_operation_timers
-                end)
+              current_thing = %{operation_timers: current_operation_timers = %{^client_token => operation_timer} } ->
+                Logger.info "[#{thing_name}] Receiving #{status} shadow document for #{operation} operation with client token: #{client_token}"
+                # Cancel operation_timeout timer
+                if (operation_timer != nil), do: Process.cancel_timer(operation_timer)
+                Logger.debug "[#{thing_name}] Cancelled #{operation} operation timeout timer for client token: #{client_token}"
+                # Remove client_token from operation_timers in current_thing
+                {_operation_timer, other_operation_timers} = current_operation_timers |> Map.pop(client_token)
+                current_thing = %{ current_thing | operation_timers: other_operation_timers}
                 # Unsubscribe if persistent_subscribe is false
                 handle_persistent_subscriptions(client, {:unsubscribe, thing_name, [operation], [:accepted, :rejected]}, current_thing)
                 # Notify status event handlers
-                GenEvent.ack_notify(handlers, {:status, thing_name, status, client_token, shadow_state_object})
+                GenEvent.ack_notify(handlers, {:status, thing_name, status, client_token, shadow_state_doc})
                 # Update state of version and operation_timers in current_thing
                 thing_shadows = %{thing_shadows | thing_name => current_thing}
                 {:noreply, %{state | thing_shadows: thing_shadows}}
 
               current_thing when status == :accepted and operation != :get ->
+                Logger.info "[#{thing_name}] Receiving accepted shadow document from foreign #{operation} operation."
                 # This operation is not made from this client
-                GenEvent.ack_notify(handlers, {:foreign_state_change, thing_name, operation, shadow_state_object})
+                GenEvent.ack_notify(handlers, {:foreign_state_change, thing_name, operation, shadow_state_doc})
                 # Update state of version in current_thing
                 thing_shadows = %{thing_shadows | thing_name => current_thing}
                 {:noreply, %{state | thing_shadows: thing_shadows}}
 
               current_thing when true ->
+                Logger.info "[#{thing_name}] Receiving #{status} shadow document from foreign #{operation} operation."
                 # Just update the version state as this operation is not made from this client, and is not relevant to local event handlers
                 thing_shadows = %{thing_shadows | thing_name => current_thing}
                 {:noreply, %{state | thing_shadows: thing_shadows}}
@@ -626,13 +673,15 @@ defmodule Aws.Iot.ThingShadow.Client do
   end
   def handle_topic_message(topic_iolist, payload, state = %{event_manager: handlers}) when is_list(topic_iolist) do
     # Handle messages from other topics
+    Logger.info "Receiving Generic message from #{topic_iolist}: #{payload}"
     GenEvent.ack_notify(handlers, {:message, to_string(topic_iolist), payload})
     {:noreply, state}
   end
 
-  def terminate(reason, state = %{mqttc: client} ) do
+  def terminate(reason, state = %{mqttc: client, event_manager: handlers} ) do
     if Process.alive?(client) do
       :ok = :emqttc.disconnect(client)
+      GenEvent.ack_notify(handlers, {:close, self})
     end
     super(reason, state)
   end
@@ -645,7 +694,11 @@ defmodule Aws.Iot.ThingShadow.Client do
   defp handle_subscriptions(client, {:subscribe, thing_name, operations, statii}, _thing_opts = %{qos: qos}) when is_binary(thing_name) do
     topics = build_thing_shadow_topics(thing_name, operations, statii)
     topics_with_qos = topics |> Enum.map(fn topic -> {topic, qos} end)
-    :emqttc.subscribe(client, topics_with_qos)
+
+    case :emqttc.sync_subscribe(client, topics_with_qos) do
+      {:ok, _} -> :ok
+      other -> other
+    end
 
     # Bug filed under https://github.com/emqtt/emqttc/issues/37
     # :emqttc.sync_subscribe(client, topics_with_qos)
@@ -657,52 +710,67 @@ defmodule Aws.Iot.ThingShadow.Client do
 
   ### Handles persistent subscribe and unsubscribe actions on thingshadow topics
   defp handle_persistent_subscriptions(_client, _topic_params = {_, thing_name, _operations, _statii}, _thing_opts = %{persistent_subscribe: true}) when is_binary(thing_name) do
-    {:ok, :noop}
+    :ok
   end
   defp handle_persistent_subscriptions(client, topic_params = {_, thing_name, _operations, _statii}, thing_opts = %{persistent_subscribe: false}) when is_binary(thing_name) do
     handle_subscriptions(client, topic_params, thing_opts)
   end
 
-  ### Publish thingshadow shadow_state_object to MQTT topic with or without versioning
-  defp publish_shadow_state_to_topic(client, topic, shadow_state_object, _current_thing = %{qos: qos, enable_versioning: true, version: version}) when is_binary(topic) do
+  ### Publish thingshadow shadow_state_doc to MQTT topic with or without versioning
+  defp publish_shadow_doc_to_topic(client, topic, shadow_state_doc, _current_thing = %{qos: qos, enable_versioning: true, version: version}) when is_binary(topic) do
     # Enable_versioning is true and version is available
-    shadow_state_object = Map.put_new(shadow_state_object, :version, version)
+    shadow_state_doc = Map.put_new(shadow_state_doc, :version, version)
 
-    # Encode shadow_state_object to json, and then Asynchronous publish to topic. If qos1, emqttc will  queue the resend.
-    shadow_state_object_json = shadow_state_object |> Poison.Encoder.encode([]) |> to_string
-    :emqttc.publish(client, topic, shadow_state_object_json, qos)
+    # Encode shadow_state_doc to json, and then Asynchronous publish to topic. If qos1, emqttc will  queue the resend.
+    shadow_state_doc_json = shadow_state_doc |> Poison.Encoder.encode([]) |> to_string
+    :emqttc.publish(client, topic, shadow_state_doc_json, qos)
   end
-  defp publish_shadow_state_to_topic(client, topic, shadow_state_object, _current_thing = %{qos: qos, enable_versioning: _}) when is_binary(topic) do
+  defp publish_shadow_doc_to_topic(client, topic, shadow_state_doc, _current_thing = %{qos: qos, enable_versioning: _}) when is_binary(topic) do
     # Version is unavailable or Enable_versioning is false
-    # Encode shadow_state_object to json, and then Asynchronous publish to topic. If qos1, emqttc will queue the resend.
-    shadow_state_object_json = shadow_state_object |> Poison.Encoder.encode([]) |> to_string
-    :emqttc.publish(client, topic, shadow_state_object_json, qos)
+    # Encode shadow_state_doc to json, and then Asynchronous publish to topic. If qos1, emqttc will queue the resend.
+    shadow_state_doc_json = shadow_state_doc |> Poison.Encoder.encode([]) |> to_string
+    :emqttc.publish(client, topic, shadow_state_doc_json, qos)
   end
 
   ### Update version in thing map based on whether `new_version` is indeed newer than `current_version`
-  defp update_version_in_thing(current_thing = %{version: current_version, discard_stale: _}, new_version, _operation = :delete) when new_version <= current_version do
+  defp update_version_in_thing(current_thing, nil, _operation) do
+    # New_version is undefined
+    current_thing
+  end
+  defp update_version_in_thing(current_thing, _new_version, _operation = :rejected) do
+    # Operation is rejected
+    current_thing
+  end
+  defp update_version_in_thing(current_thing = %{version: current_version}, new_version, _operation) when new_version > current_version do
+    # New_version is newer than current_version (needed for accepted message)
+    %{current_thing | version: new_version}
+  end
+  defp update_version_in_thing(current_thing = %{version: current_version}, new_version, _operation) when new_version == current_version do
+    # New_version is same as current_version (needed for delta message)
+    current_thing
+  end
+  defp update_version_in_thing(current_thing = %{version: _current_version, discard_stale: _}, _new_version, _operation = :delete) do
     # New_version is older than current_version, but operation is delete
     # Do not discard no matter the value of discard_stale option.
     current_thing
   end
-  defp update_version_in_thing(current_thing = %{version: current_version, discard_stale: false}, new_version, _operation) when new_version <= current_version do
+  defp update_version_in_thing(current_thing = %{version: _current_version, discard_stale: false}, _new_version, _operation) do
     # New_version is older than current_version, but discard_stale option is false
     # Do not discard as discard_stale = false
     current_thing
   end
-  defp update_version_in_thing(_current_thing = %{version: current_version, discard_stale: true}, new_version, _operation) when new_version <= current_version do
+  defp update_version_in_thing(_current_thing = %{version: _current_version, discard_stale: true}, _new_version, _operation) do
     # New_version is older than current_version, and discard_stale option is true
-    # Indicate discard new state by returning nil
+    # Indicate discard whole message by returning nil
     nil
   end
-  defp update_version_in_thing(current_thing = %{version: current_version}, new_version, _operation) when new_version > current_version do
-    # New_version is newer than current_version
-    %{current_thing | version: new_version}
-  end
-  defp update_version_in_thing(current_thing, new_version, _operation) do
+  defp update_version_in_thing(current_thing = %{}, new_version, _operation) do
     # Current_version is undefined
     Map.put_new(current_thing, :version, new_version)
   end
+  
+  
+  
 
   @doc """
   Builds thingshadow topic according to AWS Spec

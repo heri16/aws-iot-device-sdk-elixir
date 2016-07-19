@@ -31,7 +31,7 @@ defmodule Aws.Iot.ThingShadow do
   Use the `Aws.Iot.ThingShadow.Client` module to operate on the thingshadow_client.
   """
   @spec init_client([{:broadcast, {GenServer.server, binary}} | {:cast, GenServer.server} | {:call, GenServer.server}], GenServer.name, atom) :: {:ok, GenServer.server} | {:error, term}
-  def init_client(event_handler_args, app_config \\ :aws_iot, client_name \\ Aws.Iot.ThingShadow) do
+  def init_client(event_handler_args, client_name \\ Aws.Iot.ThingShadow, app_config \\ :aws_iot) do
     import Supervisor.Spec, warn: false
 
     with {:ok, _client_supervisor} <- Supervisor.start_child(@root_supervisor, supervisor(Aws.Iot.ThingShadow.Supervisor, [client_name, [app_config: app_config]])),
