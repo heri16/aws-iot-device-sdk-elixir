@@ -63,7 +63,7 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
 The Mix configuration in config/config.exs should look like this:
 
 ```elixir
-config :aws_iot, Aws.Iot.ShadowThing.Client,
+config :aws_iot, Aws.Iot.ThingShadow.Client,
   host: "xxxxxxxxx.iot.<region>.amazonaws.com",
   port: 8883,
   client_id: "xxxxxxx",
